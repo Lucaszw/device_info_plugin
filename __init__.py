@@ -17,63 +17,23 @@ You should have received a copy of the GNU General Public License
 along with device_info_plugin.  If not, see <http://www.gnu.org/licenses/>.
 """
 import cPickle as pickle
+import itertools
+import json
+import logging
 
-from zmq_plugin.plugin import Plugin as ZmqPlugin
-from zmq_plugin.schema import decode_content_data
 import gobject
-import zmq
+import paho_mqtt_helpers as pmh
 
 from ...app_context import get_app, get_hub_uri
 from ...plugin_manager import (IPlugin, PluginGlobals, ScheduleRequest,
                                SingletonPlugin, emit_signal, implements)
 
-
-class DeviceInfoZmqPlugin(ZmqPlugin):
-    def on_execute__get_device(self, request):
-        app = get_app()
-        return app.dmf_device
-
-    def on_execute__get_svg_frame(self, request):
-        app = get_app()
-        return app.dmf_device.get_svg_frame()
-
-    def on_execute__get_electrode_channels(self, request):
-        app = get_app()
-        return app.dmf_device.get_electrode_channels()
-
-    def on_execute__set_electrode_channels(self, request):
-        '''
-        Set channels for electrode `electrode_id` to `channels`.
-
-        This includes updating `self.df_electrode_channels`.
-
-        .. note:: Existing channels assigned to electrode are overwritten.
-
-        Parameters
-        ----------
-        electrode_id : str
-            Electrode identifier.
-        channels : list
-            List of channel identifiers assigned to the electrode.
-        '''
-        data = decode_content_data(request)
-        app = get_app()
-        modified = (app.dmf_device
-                    .set_electrode_channels(data['electrode_id'],
-                                            data['channels']))
-        if modified:
-            emit_signal("on_dmf_device_changed", [app.dmf_device])
-        return modified
-
-    def on_execute__dumps(self, request):
-        app = get_app()
-        return pickle.dumps(app.dmf_device)
-
+logger = logging.getLogger(__name__)
 
 PluginGlobals.push_env('microdrop')
 
 
-class DeviceInfoPlugin(SingletonPlugin):
+class DeviceInfoPlugin(SingletonPlugin, pmh.BaseMqttReactor):
     """
     This class is automatically registered with the PluginManager.
     """
@@ -84,6 +44,17 @@ class DeviceInfoPlugin(SingletonPlugin):
         self.name = self.plugin_name
         self.plugin = None
         self.command_timeout_id = None
+        pmh.BaseMqttReactor.__init__(self)
+        self.start()
+        self.mqtt_client.subscribe('microdrop/dmf-device-ui/get-device')
+
+    def on_message(self, client, userdata, msg):
+        '''
+        Callback for when a ``PUBLISH`` message is received from the broker.
+        '''
+        logger.info('[on_message] %s: "%s"', msg.topic, msg.payload)
+        if msg.topic == 'microdrop/dmf-device-ui/get-device':
+            self.get_device()
 
     def on_plugin_enable(self):
         """
@@ -98,45 +69,46 @@ class DeviceInfoPlugin(SingletonPlugin):
 
         to retain this functionality.
         """
-        self.cleanup()
-        self.plugin = DeviceInfoZmqPlugin(self.name, get_hub_uri())
-        # Initialize sockets.
-        self.plugin.reset()
-
-        def check_command_socket():
-            try:
-                msg_frames = (self.plugin.command_socket
-                              .recv_multipart(zmq.NOBLOCK))
-            except zmq.Again:
-                pass
-            else:
-                self.plugin.on_command_recv(msg_frames)
-            return True
-
-        self.command_timeout_id = gobject.timeout_add(10, check_command_socket)
-
-    def cleanup(self):
-        if self.command_timeout_id is not None:
-            gobject.source_remove(self.command_timeout_id)
-        if self.plugin is not None:
-            self.plugin = None
+        pass
 
     def on_plugin_disable(self):
         """
         Handler called once the plugin instance is disabled.
         """
-        self.cleanup()
+        pass
 
     def on_app_exit(self):
         """
         Handler called just before the MicroDrop application exits.
         """
-        self.cleanup()
+        pass
 
     def on_dmf_device_swapped(self, old_device, new_device):
-        if self.plugin is not None:
-            # Notify other plugins that device has been swapped.
-            self.plugin.execute_async(self.name, 'get_device')
+        # Notify other plugins that device has been swapped.
+        # self.plugin.execute_async(self.name, 'get_device')
+        self.get_device()
+        # 'microdrop.device_info_plugin'
+
+    def get_device(self):
+        app = get_app()
+
+        if app.dmf_device:
+            data = {}
+            data['name'] = app.dmf_device.name
+            data['svg_filepath'] = app.dmf_device.svg_filepath
+            data['electrode_channels'] = app.dmf_device.get_electrode_channels().to_json()
+            data['electrode_areas'] = app.dmf_device.get_electrode_areas().to_json()
+            data['bounding_box'] = app.dmf_device.get_bounding_box()
+            data['max_channel'] = app.dmf_device.max_channel()
+            # data['svg'] = app.dmf_device.to_svg()
+            data['diff_electrode_channels'] = app.dmf_device.diff_electrode_channels().to_json()
+            self.mqtt_client.publish('microdrop/device-info-plugin/get-device',
+                                      json.dumps(data))
+        else:
+            self.mqtt_client.publish('microdrop/device-info-plugin/get-device',
+                                      json.dumps(None))
+
+        return app.dmf_device
 
     def get_schedule_requests(self, function_name):
         """
