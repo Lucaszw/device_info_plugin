@@ -24,6 +24,8 @@ import logging
 import gobject
 import paho_mqtt_helpers as pmh
 
+from zmq_plugin.schema import PandasJsonEncoder
+
 from ...app_context import get_app, get_hub_uri
 from ...plugin_manager import (IPlugin, PluginGlobals, ScheduleRequest,
                                SingletonPlugin, emit_signal, implements)
@@ -85,9 +87,13 @@ class DeviceInfoPlugin(SingletonPlugin, pmh.BaseMqttReactor):
 
     def on_dmf_device_swapped(self, old_device, new_device):
         # Notify other plugins that device has been swapped.
-        # self.plugin.execute_async(self.name, 'get_device')
+        app = get_app()
+        if app.dmf_device:
+            # XXX: retain DmfDevice for web-ui reload
+            data = json.dumps(app.dmf_device, cls=PandasJsonEncoder)
+            self.mqtt_client.publish('microdrop/device-info-plugin/'
+                                      'device-swapped', data, retain=True)
         self.get_device()
-        # 'microdrop.device_info_plugin'
 
     def get_device(self):
         app = get_app()
