@@ -48,6 +48,8 @@ class DeviceInfoPlugin(SingletonPlugin, pmh.BaseMqttReactor):
         self.command_timeout_id = None
         pmh.BaseMqttReactor.__init__(self)
         self.start()
+
+    def on_connect(self, client, userdata, flags, rc):
         self.mqtt_client.subscribe('microdrop/dmf-device-ui/get-device')
 
     def on_message(self, client, userdata, msg):
