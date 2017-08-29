@@ -18,13 +18,19 @@ along with device_info_plugin.  If not, see <http://www.gnu.org/licenses/>.
 """
 import cPickle as pickle
 import itertools
+import io
 import json
 import logging
+from lxml import etree
 
 import gobject
 import paho_mqtt_helpers as pmh
 
-from zmq_plugin.schema import PandasJsonEncoder
+from dmf_device  import DmfDevice
+from svg_model import (INKSCAPE_NSMAP, svg_shapes_to_df, INKSCAPE_PPmm,
+                       compute_shape_centers)
+from zmq_plugin.schema import PandasJsonEncoder, pandas_object_hook
+
 
 from ...app_context import get_app, get_hub_uri
 from ...plugin_manager import (IPlugin, PluginGlobals, ScheduleRequest,
@@ -34,6 +40,8 @@ logger = logging.getLogger(__name__)
 
 PluginGlobals.push_env('microdrop')
 
+ELECTRODES_XPATH = (r'//svg:g[@inkscape:label="Device"]//svg:path | '
+                    r'//svg:g[@inkscape:label="Device"]//svg:polygon')
 
 class DeviceInfoPlugin(SingletonPlugin, pmh.BaseMqttReactor):
     """
@@ -42,23 +50,46 @@ class DeviceInfoPlugin(SingletonPlugin, pmh.BaseMqttReactor):
     implements(IPlugin)
     plugin_name = 'microdrop.device_info_plugin'
 
+    @property
+    def device(self):
+        return self._props["device"]
+
+    @device.setter
+    def device(self, value):
+        name = value["name"]
+        data = value["file"]
+
+        # Initialize DMF Device:
+        fileobj = io.BytesIO(str(data))
+        device = DmfDevice.load(fileobj,name=name)
+        device.svg_filepath = name
+        self._props["device"] = device
+
+        # Publish Device Object:
+        # self.mqtt_client.publish('microdrop/device-info-plugin/state/device',
+        #                          json.dumps(self.device,cls=PandasJsonEncoder),
+        #                          retain=False)
+        self.mqtt_client.publish('microdrop/state/device',
+                                 json.dumps(self.device,cls=PandasJsonEncoder),
+                                 retain=True)
     def __init__(self):
         self.name = self.plugin_name
         self.plugin = None
         self.command_timeout_id = None
         pmh.BaseMqttReactor.__init__(self)
+        self._props = {"device": None}
         self.start()
 
     def on_connect(self, client, userdata, flags, rc):
-        self.mqtt_client.subscribe('microdrop/dmf-device-ui/get-device')
+        self.mqtt_client.subscribe('microdrop/put/device-info-plugin/state/device')
 
     def on_message(self, client, userdata, msg):
         '''
         Callback for when a ``PUBLISH`` message is received from the broker.
         '''
-        logger.info('[on_message] %s: "%s"', msg.topic, msg.payload)
-        if msg.topic == 'microdrop/dmf-device-ui/get-device':
-            self.get_device()
+        # logger.info('[on_message] %s: "%s"', msg.topic, msg.payload)
+        if msg.topic == 'microdrop/put/device-info-plugin/state/device':
+            self.device = json.loads(msg.payload, object_hook=pandas_object_hook)
 
     def on_plugin_enable(self):
         """
@@ -89,34 +120,30 @@ class DeviceInfoPlugin(SingletonPlugin, pmh.BaseMqttReactor):
 
     def on_dmf_device_swapped(self, old_device, new_device):
         # Notify other plugins that device has been swapped.
-        app = get_app()
-        if app.dmf_device:
+        if self.device:
             # XXX: retain DmfDevice for web-ui reload
-            data = json.dumps(app.dmf_device, cls=PandasJsonEncoder)
+            data = json.dumps(self.device, cls=PandasJsonEncoder)
             self.mqtt_client.publish('microdrop/device-info-plugin/'
-                                      'device-swapped', data, retain=True)
+                                      'device-swapped', data, retain=False)
         self.get_device()
 
     def get_device(self):
-        app = get_app()
 
-        if app.dmf_device:
+        if self.device:
             data = {}
-            data['name'] = app.dmf_device.name
-            data['svg_filepath'] = app.dmf_device.svg_filepath
-            data['electrode_channels'] = app.dmf_device.get_electrode_channels().to_json()
-            data['electrode_areas'] = app.dmf_device.get_electrode_areas().to_json()
-            data['bounding_box'] = app.dmf_device.get_bounding_box()
-            data['max_channel'] = app.dmf_device.max_channel()
-            # data['svg'] = app.dmf_device.to_svg()
-            data['diff_electrode_channels'] = app.dmf_device.diff_electrode_channels().to_json()
+            data['name'] = self.device.name
+            data['electrode_channels'] = self.device.get_electrode_channels().to_json()
+            data['electrode_areas'] = self.device.get_electrode_areas().to_json()
+            data['bounding_box'] = self.device.get_bounding_box()
+            data['max_channel'] = self.device.max_channel()
+            data['diff_electrode_channels'] = self.device.diff_electrode_channels().to_json()
             self.mqtt_client.publish('microdrop/device-info-plugin/get-device',
                                       json.dumps(data))
         else:
             self.mqtt_client.publish('microdrop/device-info-plugin/get-device',
                                       json.dumps(None))
 
-        return app.dmf_device
+        return self.device
 
     def get_schedule_requests(self, function_name):
         """
