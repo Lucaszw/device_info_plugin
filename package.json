@@ -1,0 +1,25 @@
+{
+  "name": "device_info_plugin",
+  "version": "1.0.0",
+  "description": "Generate json objects of dmf devices from svg files",
+  "main": "index.js",
+  "scripts": {
+    "start": "python __init__.py"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/wheeler-microfluidics/device_info_plugin.git"
+  },
+  "keywords": [
+    "device_info_plugin"
+  ],
+  "author": "Christian Fobel",
+  "license": "BSD",
+  "bugs": {
+    "url": "https://github.com/wheeler-microfluidics/device_info_plugin/issues"
+  },
+  "homepage": "https://github.com/wheeler-microfluidics/device_info_plugin#readme",
+  "dependencies": {
+    "file-exists": "^4.0.0"
+  }
+}
