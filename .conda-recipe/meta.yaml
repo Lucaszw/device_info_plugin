@@ -13,11 +13,13 @@ package:
 
 requirements:
   build:
+    - dmf-device
     - pandas
     - path_helpers >=0.2.post4
     - pyyaml
 
   run:
+    - dmf-device
     - pandas
     - path_helpers >=0.2.post4
     - pyyaml
