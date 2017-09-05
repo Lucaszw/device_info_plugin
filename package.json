@@ -18,8 +18,5 @@
   "bugs": {
     "url": "https://github.com/wheeler-microfluidics/device_info_plugin/issues"
   },
-  "homepage": "https://github.com/wheeler-microfluidics/device_info_plugin#readme",
-  "dependencies": {
-    "file-exists": "^4.0.0"
-  }
+  "homepage": "https://github.com/wheeler-microfluidics/device_info_plugin#readme"
 }

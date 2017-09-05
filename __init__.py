@@ -24,7 +24,7 @@ import sys
 import paho_mqtt_helpers as pmh
 
 from dmf_device  import DmfDevice
-from zmq_plugin.schema import PandasJsonEncoder, pandas_object_hook
+from pandas_helpers import PandasJsonEncoder, pandas_object_hook
 
 class DeviceInfoPlugin(pmh.BaseMqttReactor):
     """
