@@ -14,13 +14,16 @@ package:
 requirements:
   build:
     - dmf-device
-    - pandas
+    - pandas-helpers
+    - paho-mqtt-helpers >=0.2
     - path_helpers >=0.2.post4
     - pyyaml
 
   run:
     - dmf-device
     - pandas
+    - pandas-helpers
+    - paho-mqtt-helpers >=0.2
     - path_helpers >=0.2.post4
     - pyyaml
 
