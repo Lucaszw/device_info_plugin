@@ -23,8 +23,9 @@ import sys
 
 import paho_mqtt_helpers as pmh
 
-from dmf_device  import DmfDevice
+from dmf_device import DmfDevice
 from pandas_helpers import PandasJsonEncoder, pandas_object_hook
+
 
 class DeviceInfoPlugin(pmh.BaseMqttReactor):
     """
@@ -42,14 +43,15 @@ class DeviceInfoPlugin(pmh.BaseMqttReactor):
 
         # Initialize DMF Device:
         fileobj = io.BytesIO(str(data))
-        device = DmfDevice.load(fileobj,name=name)
+        device = DmfDevice.load(fileobj, name=name)
         device.svg_filepath = name
         self._props["device"] = device
 
         # Publish Device Object:
-        self.mqtt_client.publish('microdrop/state/device',
-                                 json.dumps(self.device,cls=PandasJsonEncoder),
-                                 retain=True)
+        self.mqtt_client.publish('microdrop/put/device-model/device',
+                                 json.dumps(self.device,
+                                            cls=PandasJsonEncoder))
+
     def __init__(self):
         self.name = self.plugin_name
         self.plugin = None
@@ -59,15 +61,17 @@ class DeviceInfoPlugin(pmh.BaseMqttReactor):
         self.start()
 
     def on_connect(self, client, userdata, flags, rc):
-        self.mqtt_client.subscribe('microdrop/put/device-info-plugin/state/device')
+        self.mqtt_client.subscribe('microdrop/put/device-info-plugin'
+                                   '/device')
         self.on_plugin_launch()
 
     def on_message(self, client, userdata, msg):
         '''
         Callback for when a ``PUBLISH`` message is received from the broker.
         '''
-        if msg.topic == 'microdrop/put/device-info-plugin/state/device':
-            self.device = json.loads(msg.payload, object_hook=pandas_object_hook)
+        if msg.topic == 'microdrop/put/device-info-plugin/device':
+            self.device = json.loads(msg.payload,
+                                     object_hook=pandas_object_hook)
         # TODO: Stop overriding on_message for BaseMqttReactor subscriptions
         if msg.topic == "microdrop/device_info_plugin/exit":
             self.exit()
@@ -87,6 +91,7 @@ class DeviceInfoPlugin(pmh.BaseMqttReactor):
             sys.exit()
         self._connect()
         self.mqtt_client.loop_forever()
+
 
 if __name__ == "__main__":
     DeviceInfoPlugin()
