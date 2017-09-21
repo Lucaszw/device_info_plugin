@@ -17,20 +17,23 @@ You should have received a copy of the GNU General Public License
 along with device_info_plugin.  If not, see <http://www.gnu.org/licenses/>.
 """
 import io
-import json
-import signal
-import sys
 
 import paho_mqtt_helpers as pmh
-
 from dmf_device import DmfDevice
-from pandas_helpers import PandasJsonEncoder, pandas_object_hook
 
 
 class DeviceInfoPlugin(pmh.BaseMqttReactor):
     """
     This class is automatically registered with the PluginManager.
     """
+
+    def __init__(self):
+        self.name = self.plugin_name
+        self.plugin = None
+        self.command_timeout_id = None
+        pmh.BaseMqttReactor.__init__(self)
+        self._props = {"device": None}
+        self.start()
 
     @property
     def device(self):
@@ -48,49 +51,14 @@ class DeviceInfoPlugin(pmh.BaseMqttReactor):
         self._props["device"] = device
 
         # Publish Device Object:
-        self.mqtt_client.publish('microdrop/put/device-model/device',
-                                 json.dumps(self.device,
-                                            cls=PandasJsonEncoder))
+        self.trigger("put-device", self.device)
 
-    def __init__(self):
-        self.name = self.plugin_name
-        self.plugin = None
-        self.command_timeout_id = None
-        pmh.BaseMqttReactor.__init__(self)
-        self._props = {"device": None}
-        self.start()
+    def on_put_device(self, payload, args):
+        self.device = payload
 
-    def on_connect(self, client, userdata, flags, rc):
-        self.mqtt_client.subscribe('microdrop/put/device-info-plugin'
-                                   '/device')
-        self.on_plugin_launch()
-
-    def on_message(self, client, userdata, msg):
-        '''
-        Callback for when a ``PUBLISH`` message is received from the broker.
-        '''
-        if msg.topic == 'microdrop/put/device-info-plugin/device':
-            self.device = json.loads(msg.payload,
-                                     object_hook=pandas_object_hook)
-        # TODO: Stop overriding on_message for BaseMqttReactor subscriptions
-        if msg.topic == "microdrop/device_info_plugin/exit":
-            self.exit()
-
-    def start(self):
-        # TODO migrate to pmh.BaseMqttReactor
-        # Connect to MQTT broker.
-        self._connect()
-        # Start loop in background thread.
-        signal.signal(signal.SIGINT, self.exit)
-        self.mqtt_client.loop_forever()
-
-    def on_disconnect(self, *args, **kwargs):
-        # TODO migrate to pmh.BaseMqttReactor
-        # Startup Mqtt Loop after disconnected (unless should terminate)
-        if self.should_exit:
-            sys.exit()
-        self._connect()
-        self.mqtt_client.loop_forever()
+    def listen(self):
+        self.onPutMsg("device", self.on_put_device)
+        self.bindPutMsg("device-model", "device", "put-device")
 
 
 if __name__ == "__main__":
