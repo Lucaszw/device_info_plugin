@@ -56,9 +56,17 @@ class DeviceInfoPlugin(pmh.BaseMqttReactor):
     def on_put_device(self, payload, args):
         self.device = payload
 
+    def onRunningStateRequested(self, payload, args):
+        self.trigger("send-running-state", self.plugin_path)
+
     def listen(self):
         self.onPutMsg("device", self.on_put_device)
         self.bindPutMsg("device-model", "device", "put-device")
+
+        # TODO: Create MicrodropPlugin base class (that inherits from paho)
+        self.onSignalMsg("web-server", "running-state-requested",
+                         self.onRunningStateRequested)
+        self.bindSignalMsg("running", "send-running-state")
 
 
 if __name__ == "__main__":
